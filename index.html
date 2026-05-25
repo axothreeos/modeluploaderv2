@@ -7,7 +7,7 @@
 </head>
 <body>
 
-  <h1>Model Uploader</h1>
+  <h1>Axo's Model Uploader</h1>
 
   <label>Open Cloud API Key<br>
     <input type="password" id="apiKey" placeholder="Your API key">
@@ -90,7 +90,7 @@
         if (!response.ok) {
           status.textContent = 'Upload failed: ' + JSON.stringify(data);
         } else {
-          status.textContent = 'Upload started! Operation: ' + data.path + ' — check your Toolbox under "My Packages" in a moment.';
+          status.textContent = 'Upload started! Operation: ' + data.path + ' check your Toolbox under "Models" or "Meshes" in a moment.';
         }
       } catch (err) {
         status.textContent = 'Request failed: ' + err.message;
