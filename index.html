@@ -2,193 +2,99 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Model Uploader</title>
 </head>
 <body>
 
   <h1>Model Uploader</h1>
-  <p>Upload 3D models and mesh files to your Roblox inventory using your Open Cloud API key.</p>
-  <p>Supported formats: <strong>.fbx, .gltf, .glb, .rbxm, .rbxmx</strong></p>
-  <p><em>Note: .obj is not supported by the Roblox Open Cloud API.</em></p>
 
-  <hr>
+  <label>Open Cloud API Key<br>
+    <input type="password" id="apiKey" placeholder="Your API key">
+  </label><br><br>
 
-  <!--
-    SETUP: Put your deployed Cloudflare Worker URL here.
-    It looks like: https://your-worker.your-name.workers.dev
-    The worker is what actually talks to Roblox — the browser can't do it directly.
-  -->
-  <script>
-    const WORKER_URL = "https://modeluploader.acc943132.workers.dev";
-  </script>
+  <label>Creator Type<br>
+    <select id="creatorType">
+      <option value="User">User</option>
+      <option value="Group">Group</option>
+    </select>
+  </label><br><br>
 
-  <h2>Your Details</h2>
+  <label>Creator ID<br>
+    <input type="number" id="creatorId" placeholder="Your user ID or group ID">
+  </label><br><br>
 
-  <label for="userId">Roblox User ID</label><br>
-  <!--
-    Find your user ID in the URL of your Roblox profile page.
-    Example: https://www.roblox.com/users/1234567/profile → user ID is 1234567
-  -->
-  <input type="text" id="userId" placeholder="e.g. 1234567" size="30"><br><br>
+  <label>Asset Name<br>
+    <input type="text" id="assetName" placeholder="My Cool Model">
+  </label><br><br>
 
-  <label for="apiKey">Open Cloud API Key</label><br>
-  <!--
-    Get this from: https://create.roblox.com/dashboard/credentials
-    Create an API key with "Assets: write" permission.
-    This is never stored — it's only used for the upload request and discarded.
-  -->
-  <input type="password" id="apiKey" placeholder="Paste your API key here" size="50"><br><br>
+  <label>Description (optional)<br>
+    <textarea id="assetDescription" rows="3" placeholder="A short description..."></textarea>
+  </label><br><br>
 
-  <hr>
+  <label>Model File (.rbxm or .rbxmx)<br>
+    <input type="file" id="modelFile" accept=".rbxm,.rbxmx">
+  </label><br><br>
 
-  <h2>Asset Info</h2>
+  <button onclick="uploadModel()">Upload</button>
 
-  <label for="displayName">Asset Name</label><br>
-  <!-- This is what the asset will be called in your Roblox inventory -->
-  <input type="text" id="displayName" placeholder="My Cool Model" size="40"><br><br>
-
-  <label for="description">Description (optional)</label><br>
-  <input type="text" id="description" placeholder="A short description" size="60"><br><br>
-
-  <label for="assetType">Asset Type</label><br>
-  <!--
-    Pick the type that matches your file:
-    - Model   → use for FBX, glTF, glb, rbxm, rbxmx
-    - MeshPart → use for raw Roblox-format mesh files (downloaded from Asset Delivery API)
-  -->
-  <select id="assetType">
-    <option value="Model">Model (FBX / glTF / glb / rbxm / rbxmx)</option>
-    <option value="MeshPart">MeshPart (Roblox mesh format only)</option>
-  </select><br><br>
-
-  <hr>
-
-  <h2>File</h2>
-
-  <label for="fileInput">Choose file</label><br>
-  <!-- Only show the file types Roblox actually accepts — no obj, no stl, etc. -->
-  <input type="file" id="fileInput" accept=".fbx,.gltf,.glb,.rbxm,.rbxmx"><br><br>
-
-  <button onclick="uploadAsset()">Upload to Roblox</button>
-
-  <hr>
-
-  <h2>Result</h2>
-  <!-- Upload status and any response from Roblox will appear here -->
-  <pre id="output">Waiting for upload...</pre>
-
+  <p id="status"></p>
 
   <script>
-    // ============================================================
-    // uploadAsset — called when the user clicks "Upload to Roblox"
-    // ============================================================
-    async function uploadAsset() {
+    const WORKER_URL = 'https://sl-model-uploader.acc943132.workers.dev/';
 
-      // Grab everything the user filled in
-      const userId      = document.getElementById("userId").value.trim();
-      const apiKey      = document.getElementById("apiKey").value.trim();
-      const displayName = document.getElementById("displayName").value.trim();
-      const description = document.getElementById("description").value.trim();
-      const assetType   = document.getElementById("assetType").value;
-      const fileInput   = document.getElementById("fileInput");
-      const output      = document.getElementById("output");
+    async function uploadModel() {
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const creatorType = document.getElementById('creatorType').value;
+      const creatorId = document.getElementById('creatorId').value.trim();
+      const assetName = document.getElementById('assetName').value.trim();
+      const assetDescription = document.getElementById('assetDescription').value.trim();
+      const fileInput = document.getElementById('modelFile');
+      const status = document.getElementById('status');
 
-      // Make sure nothing required is blank
-      if (!userId || !apiKey || !displayName || !fileInput.files[0]) {
-        output.textContent = "Please fill in User ID, API Key, Asset Name, and choose a file.";
+      if (!apiKey || !creatorId || !assetName || !fileInput.files[0]) {
+        status.textContent = 'Please fill in all required fields and select a file.';
         return;
       }
 
       const file = fileInput.files[0];
+      status.textContent = 'Uploading...';
 
-      // Double-check the file extension against what Roblox accepts
-      const allowed = ["fbx", "gltf", "glb", "rbxm", "rbxmx"];
-      const ext = file.name.split(".").pop().toLowerCase();
-      if (!allowed.includes(ext)) {
-        output.textContent = `File type ".${ext}" is not supported.\nUse: .fbx, .gltf, .glb, .rbxm, or .rbxmx`;
-        return;
-      }
+      const formData = new FormData();
 
-      output.textContent = "Reading file...";
+      const requestPayload = {
+        assetType: 'Model',
+        displayName: assetName,
+        description: assetDescription,
+        creationContext: {
+          creator: {
+            ...(creatorType === 'User'
+              ? { userId: creatorId }
+              : { groupId: creatorId })
+          }
+        }
+      };
 
-      // Read the file as base64 so it can be sent in JSON to the worker.
-      // The worker converts it back to raw bytes before sending to Roblox.
-      let base64;
+      formData.append('request', JSON.stringify(requestPayload));
+      formData.append('fileContent', file, file.name);
+
       try {
-        base64 = await readFileAsBase64(file);
-      } catch (err) {
-        output.textContent = "Failed to read file: " + err.message;
-        return;
-      }
-
-      output.textContent = "Uploading to Roblox via worker...";
-
-      // Send everything to the Cloudflare Worker.
-      // The worker adds the API key to the Roblox request server-side
-      // so the key is never visible in the browser's network tab.
-      let response;
-      try {
-        response = await fetch(WORKER_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            apiKey,
-            displayName,
-            description,
-            assetType,
-            fileData: base64,
-            fileName: file.name
-          })
+        const response = await fetch(WORKER_URL, {
+          method: 'POST',
+          headers: { 'x-api-key': apiKey },
+          body: formData
         });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          status.textContent = 'Upload failed: ' + JSON.stringify(data);
+        } else {
+          status.textContent = 'Upload started! Operation: ' + data.path + ' — check your Toolbox under "My Packages" in a moment.';
+        }
       } catch (err) {
-        output.textContent = "Could not reach the Cloudflare Worker.\nMake sure WORKER_URL is set correctly.\n\nError: " + err.message;
-        return;
+        status.textContent = 'Request failed: ' + err.message;
       }
-
-      // Parse and display whatever came back
-      let result;
-      try {
-        result = await response.json();
-      } catch {
-        output.textContent = "Worker returned a non-JSON response (status " + response.status + ")";
-        return;
-      }
-
-      if (response.ok) {
-        // Success — Roblox returns an operation object with a path and asset ID inside
-        output.textContent =
-          "Upload successful!\n\n" +
-          "Roblox processes uploads asynchronously, so it may take a moment to appear in your inventory.\n\n" +
-          "Response from Roblox:\n" +
-          JSON.stringify(result, null, 2);
-      } else {
-        // Something went wrong — show the error so the user knows what to fix
-        output.textContent =
-          "Upload failed (status " + response.status + "):\n\n" +
-          JSON.stringify(result, null, 2);
-      }
-    }
-
-
-    // ============================================================
-    // readFileAsBase64 — reads a File object and returns base64
-    // We use base64 because JSON can't carry raw binary data
-    // ============================================================
-    function readFileAsBase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-
-        // FileReader gives us a data URL like "data:model/fbx;base64,AAAA..."
-        // We only want the part after the comma
-        reader.onload = () => {
-          const base64 = reader.result.split(",")[1];
-          resolve(base64);
-        };
-
-        reader.onerror = () => reject(new Error("FileReader failed"));
-        reader.readAsDataURL(file);
-      });
     }
   </script>
 
